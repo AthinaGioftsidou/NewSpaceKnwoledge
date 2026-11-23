@@ -54,6 +54,7 @@ class Destination:
         """Find by id or by display name: what a player typed, resolved."""
         return self._items.match(term)
 
+    #Not used as of now, but worth it in the future
     def open_container_holding(self, term: str) -> Container | None:
         """The container here that holds a match for `term`.
 
