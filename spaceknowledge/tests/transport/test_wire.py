@@ -4,7 +4,7 @@ import io
 import json
 import unittest
 
-from spaceknowledge.common.messages import ItemInfo, Request, Response
+from spaceknowledge.common.messages import ItemInfo, Request, Response, WorldEvent
 from spaceknowledge.common.refusal import Refusal
 from spaceknowledge.transport.wire import (
     MAX_LINE, WireError, read_message, request_from_wire, request_to_wire,
@@ -65,6 +65,20 @@ class TestWire(unittest.TestCase):
         with self.assertRaises(WireError):
             response_from_wire({"op_id": "op1", "ok": True,
                                 "refusal": {"what": "a", "why": "b", "next_step": "c"}})
+
+    def test_news_survives_the_trip(self):
+        news = Response("op1", events=(WorldEvent(5, "earth", "ada", "drop", "torch"),), latest=9)
+        back = response_from_wire(read_message(through_the_wire(response_to_wire(news))))
+        self.assertEqual("ada dropped a torch", back.events[0].describe())
+        self.assertEqual(9, back.latest)
+
+    def test_a_bad_event_is_refused(self):
+        good = {"seq": 1, "place": "earth", "player_id": "ada", "action": "drop",
+                "item_name": "torch"}
+        for event in ({**good, "seq": 0}, {**good, "action": "dance"}, {**good, "extra": 1}):
+            with self.subTest(event=event):
+                with self.assertRaises(WireError):
+                    response_from_wire({"op_id": "op1", "ok": True, "events": [event]})
 
 
 if __name__ == "__main__":

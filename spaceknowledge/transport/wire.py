@@ -9,7 +9,7 @@ import json
 from collections.abc import Callable
 from typing import Any, BinaryIO
 
-from spaceknowledge.common.messages import ItemInfo, Request, Response
+from spaceknowledge.common.messages import ItemInfo, Request, Response, WorldEvent
 from spaceknowledge.common.refusal import Refusal
 
 # The longest line accepted. Reading is capped so one client cannot make the
@@ -110,6 +110,14 @@ def response_to_wire(response: Response) -> dict[str, Any]:
             {"id": i.item_id, "name": i.name, "description": i.description}
             for i in response.items
         ]
+    if response.latest:
+        body["latest"] = response.latest
+    if response.events:
+        body["events"] = [
+            {"seq": e.seq, "place": e.place, "player_id": e.player_id,
+             "action": e.action, "item_name": e.item_name}
+            for e in response.events
+        ]
     return body
 
 
@@ -122,10 +130,24 @@ def _item_from_wire(raw: Any) -> ItemInfo:
         text_field(raw, "description", "an item"),
     )
 
+def _event_from_wire(raw: Any) -> WorldEvent:
+    raw = _object(raw, "an event")
+    _check_fields(raw, "an event", {"seq", "place", "player_id", "action", "item_name"}, set())
+    seq = raw["seq"]
+    if isinstance(seq, bool) or not isinstance(seq, int) or seq < 1:
+        raise WireError("an event needs seq as a whole number of at least 1")
+    return WorldEvent(
+        seq,
+        text_field(raw, "place", "an event"),
+        text_field(raw, "player_id", "an event"),
+        text_field(raw, "action", "an event"),
+        text_field(raw, "item_name", "an event"),
+    )
+
 
 def response_from_wire(body: Any) -> Response:
     body = _object(body, "a response")
-    _check_fields(body, "a response", {"op_id", "ok"}, {"refusal", "items"})
+    _check_fields(body, "a response", {"op_id", "ok"}, {"refusal", "items", "events", "latest"})
     op_id = text_field(body, "op_id", "a response")
     ok = body["ok"]
     if not isinstance(ok, bool):
@@ -141,7 +163,14 @@ def response_from_wire(body: Any) -> Response:
     raw_items = body.get("items", [])
     if not isinstance(raw_items, list):
         raise WireError("items must be a list")
+    raw_events = body.get("events", [])
+    if not isinstance(raw_events, list):
+        raise WireError("events must be a list")
+    latest = body.get("latest", 0)
+    if isinstance(latest, bool) or not isinstance(latest, int) or latest < 0:
+        raise WireError("latest must be a whole number, 0 or more")
     try:
-        return Response(op_id, refusal, tuple(_item_from_wire(i) for i in raw_items))
+        return Response(op_id, refusal, tuple(_item_from_wire(i) for i in raw_items),
+                        tuple(_event_from_wire(e) for e in raw_events), latest)
     except ValueError as problem:
         raise WireError(str(problem)) from None

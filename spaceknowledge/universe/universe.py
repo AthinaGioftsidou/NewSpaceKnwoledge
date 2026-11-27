@@ -1,7 +1,9 @@
 """The Universe: the authority on the world. It decides what happens in it."""
 
+import time
+
 from spaceknowledge.common.item_cycle import PICK, ItemCycle
-from spaceknowledge.common.messages import ItemInfo, Request, Response
+from spaceknowledge.common.messages import ItemInfo, Request, Response, WorldEvent
 from spaceknowledge.common.refusal import Refusal
 from spaceknowledge.universe.deposits import Deposits
 from spaceknowledge.universe.missions import COMPLETE, Mission, MissionBook, MissionError
@@ -11,13 +13,14 @@ from spaceknowledge.universe.universe_repository import (
     UniverseRepository,
     UniverseState,
 )
+from spaceknowledge.universe.world_events import EventFeed, WorldObserver
 from spaceknowledge.world.container import Container
 from spaceknowledge.world.destination import Destination
 from spaceknowledge.world.item import Item, PlainItem
 from spaceknowledge.world.world import World
 
 # Questions that change nothing. Their answers are not remembered or saved.
-READ_ONLY = ("look", "where", "mission")
+READ_ONLY = ("look", "where", "mission", "news")
 
 # How many answered operations are remembered. It must be larger than the
 # number of operations that can be unfinished at once, because an answer that
@@ -37,6 +40,12 @@ class Universe:
 
     State is loaded from the repository at start and saved after every request
     it decides, so a restart picks up where it stopped.
+
+    It is also the SUBJECT of the Observer pattern: every drop and pick it
+    decides is sent to each subscribed WorldObserver. Its own EventFeed is
+    always subscribed, and answers the "news" question. Events are numbered
+    from the time the Universe starts (in milliseconds), so a number is never
+    reused after a restart; `first_event` fixes the first number for tests.
     """
 
     def __init__(
@@ -46,6 +55,7 @@ class Universe:
         repository: UniverseRepository | None = None,
         max_answers: int = DEFAULT_MAX_ANSWERS,
         missions: MissionBook | None = None,
+        first_event: int | None = None,
     ) -> None:
         if not isinstance(world, World):
             raise TypeError(f"world must be a World, not {type(world).__name__}")
@@ -61,6 +71,10 @@ class Universe:
             raise ValueError("max_answers must be at least 1")
         if missions is not None and not isinstance(missions, MissionBook):
             raise TypeError(f"missions must be a MissionBook, not {type(missions).__name__}")
+        if first_event is None:
+            first_event = time.time_ns() // 1_000_000
+        if isinstance(first_event, bool) or not isinstance(first_event, int) or first_event < 1:
+            raise ValueError("first_event must be a whole number of at least 1")
         self._world = world
         self._deposits = deposits if deposits is not None else Deposits({})
         self._repository = repository if repository is not None else InMemoryUniverseRepository()
@@ -70,6 +84,10 @@ class Universe:
         self._dropped: dict[str, list[str]] = {}
         self._ground: dict[str, dict[str, ItemCycle]] = {}
         self._answers: dict[str, Response] = {}
+        self._observers: list[WorldObserver] = []
+        self._next_event = first_event
+        self._feed = EventFeed()
+        self.subscribe(self._feed)
         # One row per action. Adding an action is one row and one method.
         self._handlers = {
             "add_item": self._add_item,
@@ -81,6 +99,7 @@ class Universe:
             "fly": self._fly,
             "mission": self._mission,
             "answer": self._answer,
+            "news": self._news,
         }
         self._check_missions_fit_the_world()
         self._restore()
@@ -94,6 +113,25 @@ class Universe:
             raise ValueError(f"unknown destination {destination_id}") from None
         self._locations[player_id] = destination_id
         self._save()
+
+    def subscribe(self, observer: WorldObserver) -> None:
+        """Start telling `observer` about every drop and pick."""
+        if not isinstance(observer, WorldObserver):
+            raise TypeError(f"observer must be a WorldObserver, not {type(observer).__name__}")
+        if observer not in self._observers:
+            self._observers.append(observer)
+
+    def unsubscribe(self, observer: WorldObserver) -> None:
+        """Stop telling `observer`. Unknown observers are ignored."""
+        if observer in self._observers:
+            self._observers.remove(observer)
+
+    def _publish(self, place: str, player_id: str, action: str, item_name: str) -> None:
+        """Number the event and tell every observer about it."""
+        event = WorldEvent(self._next_event, place, player_id, action, item_name)
+        self._next_event += 1
+        for observer in list(self._observers):
+            observer.notify(event)
 
     def location_of(self, player_id: str) -> str | None:
         """The id of the destination the player is in, or None if unknown."""
@@ -195,6 +233,8 @@ class Universe:
         self._ground.setdefault(destination.destination_id, {})[request.item_id] = ItemCycle(
             request.item_id, PICK
         )
+        self._publish(destination.destination_id, request.player_id, "drop",
+                      request.display_name)
         return Response(request.op_id)
 
     def _look(self, request: Request) -> Response:
@@ -270,7 +310,22 @@ class Universe:
         lying = self._dropped.get(destination.destination_id, [])
         if item.item_id in lying:
             lying.remove(item.item_id)
+        self._publish(destination.destination_id, request.player_id, "pick", item.name)
         return Response(request.op_id, items=(self._info(item),))
+
+    
+    def _news(self, request: Request) -> Response:
+        """What other players did here since event number `item_id`. Changes
+        nothing. The number is the last one the player has already seen."""
+        destination = self._destination_of(request)
+        if destination is None:
+            return self._unknown_player(request)
+        cursor = request.item_id
+        if not (cursor.isascii() and cursor.isdigit() and len(cursor) <= 18):
+            return self._refuse(request, "the news number is not a whole number",
+                                "send the number of the last event you have seen, or 0")
+        events = self._feed.since(int(cursor), destination.destination_id, request.player_id)
+        return Response(request.op_id, events=events, latest=self._next_event - 1)
 
     def _mine(self, request: Request) -> Response:
         destination = self._destination_of(request)
