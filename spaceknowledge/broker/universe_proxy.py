@@ -70,4 +70,5 @@ class UniverseProxy:
         refusal = proxy.begin_pick()
         if refusal is not None:
             return refusal
-        return self._send(Request(self._next_op_id(), "pick", player_id, proxy.item_id), proxy)
+        request = Request(self._next_op_id(), "pick", player_id, proxy.item_id, name=proxy.name)
+        return self._send(request, proxy)

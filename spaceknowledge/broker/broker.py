@@ -11,6 +11,7 @@ from spaceknowledge.broker.inventory_repository import (
     InventoryRepository,
 )
 from spaceknowledge.broker.item_proxy import ItemProxy
+from spaceknowledge.broker.pending_repository import InMemoryPendingRepository, PendingRepository
 from spaceknowledge.broker.player_inventory import PlayerInventory
 from spaceknowledge.broker.resource_bag import ResourceBag
 from spaceknowledge.broker.universe_proxy import UniverseProxy
@@ -35,14 +36,21 @@ class Broker:
     delete the proxy. A mine has no states: the bag grows only if the Universe
     says yes.
 
-    Every change is written down as "pending" BEFORE it is sent, and crossed
-    off only when its answer has been applied. After a crash, `recover` sends
-    the unfinished ones again with their original op_id, and the Universe's
-    remembered answers make that safe.
+    Every change is written down in the pending notebook (pending.json)
+    BEFORE it is sent, and crossed off only when its answer has been applied
+    to players.json. Settling writes players.json first, with the op_id in its
+    "settled" list, and only then crosses it off in pending.json. So at a
+    restart the two files are compared: an op_id in both was already applied
+    and is just crossed off; an op_id only in pending.json is still in flight,
+    so its item is locked again and `recover` sends it again with its original
+    op_id, which the Universe's remembered answers make safe.
     """
 
     def __init__(
-        self, channel: UniverseChannel, repository: InventoryRepository | None = None
+        self,
+        channel: UniverseChannel,
+        repository: InventoryRepository | None = None,
+        pending: PendingRepository | None = None,
     ) -> None:
         if not isinstance(channel, UniverseChannel):
             raise TypeError(f"channel must be a UniverseChannel, not {type(channel).__name__}")
@@ -50,11 +58,18 @@ class Broker:
             raise TypeError(
                 f"repository must be an InventoryRepository, not {type(repository).__name__}"
             )
+        if pending is not None and not isinstance(pending, PendingRepository):
+            raise TypeError(
+                f"pending must be a PendingRepository, not {type(pending).__name__}"
+            )
         self._channel = channel
         self._repository = repository if repository is not None else InMemoryInventoryRepository()
+        self._notebook = pending if pending is not None else InMemoryPendingRepository()
         self._inventories: dict[str, PlayerInventory] = {}
         self._resources: dict[str, ResourceBag] = {}
         self._pending: dict[str, Request] = {}
+        # Applied to players.json, but maybe still listed in pending.json.
+        self._settled: set[str] = set()
         self._proxies: dict[str, ItemProxy] = {}  # op_id -> proxy of a pick in flight
         self._run_id = uuid4().hex[:8]
         self._op_numbers = count(1)
@@ -272,7 +287,7 @@ class Broker:
             self._proxies[request.op_id] = proxy
         self._pending[request.op_id] = request
         try:
-            self._save()
+            self._save_pending()
         except OSError:
             # Not on disk, so it must not be sent: take the intention back.
             del self._pending[request.op_id]
@@ -287,7 +302,9 @@ class Broker:
         return response
 
     def _settle(self, request: Request, response: Response) -> Refusal | None:
-        """Apply the answer, cross the intention off, and save both together."""
+        """Apply the answer and save players.json, marking the op_id settled;
+        only then cross it off in pending.json. A crash between the two saves
+        leaves the op_id in both files, and the restart sees it was done."""
         if request.action == "add_item":
             inventory = self._inventories[request.player_id]
             if response.ok:
@@ -299,7 +316,9 @@ class Broker:
         elif request.action == "mine" and response.ok:
             self._resources[request.player_id].add(request.item_id, request.amount)
         del self._pending[request.op_id]
+        self._settled.add(request.op_id)
         self._save()
+        self._save_pending()
         return response.refusal
 
     def _settle_pick(self, request: Request, response: Response) -> None:
@@ -340,13 +359,27 @@ class Broker:
                 bag.add(resource, amount)
             self._inventories[player_id] = inventory
             self._resources[player_id] = bag
-        for request in self._repository.load_pending():
+        # Compare the notebook with players.json, one operation at a time.
+        settled = self._repository.load_settled()
+        crossed_off = 0
+        for request in self._notebook.load():
+            if request.op_id in settled:
+                crossed_off += 1   # its answer is already in players.json
+                continue
             self._restore_pending(request)
+        if crossed_off:
+            self._save_pending()
 
     def _restore_pending(self, request: Request) -> None:
+        """Put one operation that was in flight back into flight."""
         if request.action not in ACTIONS:
             raise CorruptStoreError(
                 f"pending operation {request.op_id} has an unknown action {request.action}"
+            )
+        if request.player_id not in self._inventories:
+            raise CorruptStoreError(
+                f"pending operation {request.op_id} is for {request.player_id}, "
+                "who is not in players.json"
             )
         if request.action == "add_item":
             # The saved item is still in the inventory, so move it back to
@@ -357,6 +390,13 @@ class Broker:
                     f"pending drop {request.op_id} names {request.item_id}, "
                     f"which {request.player_id} cannot be dropping"
                 )
+        if request.action == "pick":
+            # The item is still in the Universe, and this player is waiting
+            # for it: a new proxy for it, in flight again.
+            name = request.display_name
+            proxy = ItemProxy(ItemInfo(request.item_id, name, f"a {name}"), self._universe.pick)
+            proxy.begin_pick()
+            self._proxies[request.op_id] = proxy
         self._pending[request.op_id] = request
 
     def _save(self) -> None:
@@ -364,4 +404,10 @@ class Broker:
         for player_id, inventory in self._inventories.items():
             items[player_id] = [(entry.item_id, entry.name) for entry in inventory.entries()]
         bags = {player_id: bag.snapshot() for player_id, bag in self._resources.items()}
-        self._repository.save(items, bags, list(self._pending.values()))
+        self._repository.save(items, bags, self._settled)
+
+    def _save_pending(self) -> None:
+        """Write the notebook. Once it is on disk, no settled op_id is listed
+        in it any more, so players.json can forget them at its next save."""
+        self._notebook.save(list(self._pending.values()))
+        self._settled.clear()

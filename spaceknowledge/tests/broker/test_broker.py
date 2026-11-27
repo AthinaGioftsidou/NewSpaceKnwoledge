@@ -5,23 +5,24 @@ import unittest
 
 from spaceknowledge.broker.broker import Broker
 from spaceknowledge.broker.inventory_repository import InMemoryInventoryRepository
+from spaceknowledge.broker.pending_repository import InMemoryPendingRepository
 from spaceknowledge.tests.universe.test_universe import a_universe
 from spaceknowledge.transport.channel import InMemoryChannel, UniverseChannel
 
 
 class LosingChannel(UniverseChannel):
     """Delivers to the Universe, but when `lose` is set, the ANSWER is lost on
-    the way back, the way a crash or a cut cable would lose it."""
+    the way back, the way a crash or a cut cable would lose it. `lose` can
+    also be an action name, to lose only the answers to that action."""
 
     def __init__(self, inner):
         self.inner, self.lose = inner, False
 
     def send(self, request):
         response = self.inner.send(request)
-        if self.lose:
+        if self.lose is True or self.lose == request.action:
             raise ConnectionError("the answer was lost")
         return response
-
 
 class FailingRepository(InMemoryInventoryRepository):
     """Saves normally until `fail` is set, then refuses like a full disk."""
@@ -34,13 +35,32 @@ class FailingRepository(InMemoryInventoryRepository):
         super().save(*args, **kwargs)
 
 
+
+class FailingNotebook(InMemoryPendingRepository):
+    """pending.json: saves normally until `fail` is set. `fail_after` lets a
+    number of saves through first, to cut the power at an exact moment."""
+
+    fail = False
+    fail_after = None
+
+    def save(self, pending):
+        if self.fail_after is not None:
+            if self.fail_after == 0:
+                raise OSError("the power went out")
+            self.fail_after -= 1
+        if self.fail:
+            raise OSError("disk full")
+        super().save(pending)
+
+
 class TestBroker(unittest.TestCase):
 
     def setUp(self):
         self.universe = a_universe()
         self.channel = LosingChannel(InMemoryChannel(self.universe))
         self.repository = FailingRepository()
-        self.broker = Broker(self.channel, self.repository)
+        self.notebook = FailingNotebook()
+        self.broker = Broker(self.channel, self.repository, self.notebook)
         self.broker.join("ada", "earth")
 
     def carried(self, broker=None):
@@ -91,7 +111,7 @@ class TestBroker(unittest.TestCase):
         self.assertEqual({}, self.broker.resources_of("ada").snapshot())
         # The Broker restarts: same saved file, fresh objects, a working line.
         self.channel.lose = False
-        restarted = Broker(self.channel, self.repository)
+        restarted = Broker(self.channel, self.repository, self.notebook)
         self.assertEqual(1, restarted.recover())         # the same op_id is sent again
         self.assertEqual({"iron": 5}, restarted.resources_of("ada").snapshot())
         self.assertEqual(0, restarted.pending_count())
@@ -102,19 +122,61 @@ class TestBroker(unittest.TestCase):
         with self.assertRaises(ConnectionError):
             self.broker.drop("ada", "torch")
         self.channel.lose = False
-        restarted = Broker(self.channel, self.repository)
+        restarted = Broker(self.channel, self.repository, self.notebook)
         self.assertEqual("flight", restarted.inventory_of("ada").entries()[0].state())
         restarted.recover()
         self.assertEqual([], self.carried(restarted))    # the drop was finished
 
     def test_if_the_intention_cannot_be_saved_nothing_is_sent(self):
-        self.repository.fail = True
+        self.notebook.fail = True
         with self.assertRaises(OSError):
             self.broker.drop("ada", "torch")
-        self.repository.fail = False
+        self.notebook.fail = False
         self.assertEqual("owned", self.broker.inventory_of("ada").entries()[0].state())  # undone
         self.assertEqual([], self.broker.look("ada"))    # the Universe never heard of it
         self.assertEqual(0, self.broker.pending_count())
+
+    def test_the_notebook_lists_only_what_is_in_flight(self):
+        self.channel.lose = True
+        with self.assertRaises(ConnectionError):
+            self.broker.drop("ada", "torch")
+        in_flight = self.notebook.load()
+        self.assertEqual(["add_item"], [r.action for r in in_flight])
+        self.assertNotIn(in_flight[0].op_id, self.repository.load_settled())   # not applied yet
+
+    def test_a_pick_in_flight_is_put_back_in_flight_after_a_power_cut(self):
+        self.broker.drop("ada", "torch")
+        self.channel.lose = "pick"
+        with self.assertRaises(ConnectionError):
+            self.broker.pick("ada", "torch")             # the torch is in flight...
+        self.channel.lose = False
+        restarted = Broker(self.channel, self.repository, self.notebook)   # ...power comes back
+        self.assertEqual(["flight"], restarted.picks_in_flight())          # flight state restored
+        self.assertEqual(1, restarted.recover())
+        self.assertEqual([], restarted.picks_in_flight())
+        self.assertEqual(["torch"], self.carried(restarted))
+
+    def test_a_power_cut_between_the_two_saves_does_nothing_twice(self):
+        # The answer is applied and players.json saved, then the power goes
+        # out before pending.json is updated: the op_id is now in BOTH files.
+        self.notebook.fail_after = 1                     # the intention is saved, then nothing
+        with self.assertRaises(OSError):
+            self.broker.mine("ada", "iron", 5)
+        self.notebook.fail_after = None
+        self.assertEqual(1, len(self.notebook.load()))   # still in pending.json
+        self.assertEqual(1, len(self.repository.load_settled()))   # but marked settled
+        restarted = Broker(self.channel, self.repository, self.notebook)
+        self.assertEqual(0, restarted.pending_count())   # compared and crossed off
+        self.assertEqual([], self.notebook.load())
+        self.assertEqual({"iron": 5}, restarted.resources_of("ada").snapshot())   # not 10
+        self.assertEqual(0, restarted.recover())         # nothing to send again
+
+    def test_a_notebook_naming_a_stranger_is_refused(self):
+        from spaceknowledge.broker.inventory_repository import CorruptStoreError
+        from spaceknowledge.common.messages import Request
+        self.notebook.save([Request("x-op1", "mine", "eve", "iron", 1)])
+        with self.assertRaises(CorruptStoreError):
+            Broker(self.channel, self.repository, self.notebook)
 
 
 if __name__ == "__main__":

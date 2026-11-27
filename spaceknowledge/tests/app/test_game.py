@@ -3,6 +3,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+import json
 
 from spaceknowledge.app.game import build_game
 from spaceknowledge.app.layout import WORLD_FILE
@@ -34,7 +35,8 @@ class TestGame(unittest.TestCase):
         front = self.start().front
         front.register("ada", PASSWORD)
         front.login("ada", PASSWORD)                 # joining the world saves both servers
-        for name in ("universe.json", "players.json", "accounts.json", "server.key"):
+        for name in ("universe.json", "players.json", "pending.json", "accounts.json",
+                     "server.key"):
             with self.subTest(file=name):
                 self.assertTrue((self.state / name).exists())
 
@@ -47,6 +49,14 @@ class TestGame(unittest.TestCase):
         again = self.start().front                   # same folder, fresh program
         token = again.login("ada", PASSWORD)          # the account is still there
         self.assertEqual("You are at The Moon.", again.command(token, "where"))
+
+    def test_nothing_is_left_in_flight_after_a_normal_game(self):
+        front = self.start().front
+        front.register("ada", PASSWORD)
+        token = front.login("ada", PASSWORD)
+        front.command(token, "drop torch")
+        saved = json.loads((self.state / "pending.json").read_text(encoding="utf-8"))
+        self.assertEqual([], saved["pending"])          # every operation was crossed off
 
     def test_closing_twice_is_harmless(self):
         game = self.start()

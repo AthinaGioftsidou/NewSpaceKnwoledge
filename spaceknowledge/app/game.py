@@ -6,10 +6,13 @@ from pathlib import Path
 
 from spaceknowledge.app.admin_service import AdminService
 from spaceknowledge.app.front import Front
-from spaceknowledge.app.paths import ACCOUNTS_FILE, PLAYERS_FILE, SERVER_KEY_FILE, UNIVERSE_FILE
+from spaceknowledge.app.paths import (
+    ACCOUNTS_FILE, PENDING_FILE, PLAYERS_FILE, SERVER_KEY_FILE, UNIVERSE_FILE,
+)
 from spaceknowledge.broker.broker import Broker
 from spaceknowledge.broker.broker_server import BrokerServer
 from spaceknowledge.broker.inventory_repository import JsonInventoryRepository
+from spaceknowledge.broker.pending_repository import JsonPendingRepository
 from spaceknowledge.transport.server_auth import (
     AuthenticatedChannel,
     ServerIdentity,
@@ -97,7 +100,8 @@ def build_game(
             ServerIdentity("broker", key),
             ServerIdentity("universe", key),
         )
-        broker = Broker(channel, JsonInventoryRepository(state_dir / PLAYERS_FILE))
+        broker = Broker(channel, JsonInventoryRepository(state_dir / PLAYERS_FILE),
+                        JsonPendingRepository(state_dir / PENDING_FILE))
         broker.recover()
 
         broker_server = BrokerServer(broker)

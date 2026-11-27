@@ -24,11 +24,14 @@ from spaceknowledge.app.front import Front
 from spaceknowledge.app.game import Game
 from spaceknowledge.app.keys import MissingKeyError, read_existing_key
 from spaceknowledge.app.layout import SETTINGS_FILE, UNIVERSE_STATE_DIR, broker_state_dir
-from spaceknowledge.app.paths import ACCOUNTS_FILE, MAILBOX_FILE, PLAYERS_FILE, SERVER_KEY_FILE
+from spaceknowledge.app.paths import (
+    ACCOUNTS_FILE, MAILBOX_FILE, PENDING_FILE, PLAYERS_FILE, SERVER_KEY_FILE,
+)
 from spaceknowledge.app.settings import SettingsError, is_valid_name, load_settings
 from spaceknowledge.broker.broker import Broker
 from spaceknowledge.broker.broker_server import BrokerServer
 from spaceknowledge.broker.inventory_repository import CorruptStoreError, JsonInventoryRepository
+from spaceknowledge.broker.pending_repository import CorruptPendingError, JsonPendingRepository
 from spaceknowledge.broker.metrics import BrokerMetrics
 from spaceknowledge.common.logfile import LOG_DIR, close_log, open_log
 from spaceknowledge.common.refusal import Refusal
@@ -79,7 +82,8 @@ def build_broker(
     with ExitStack() as stack:
         channel = SocketChannel(host, port, ServerIdentity(name, key), timeout)
         stack.callback(channel.close)
-        broker = Broker(channel, JsonInventoryRepository(state_dir / PLAYERS_FILE))
+        broker = Broker(channel, JsonInventoryRepository(state_dir / PLAYERS_FILE),
+                        JsonPendingRepository(state_dir / PENDING_FILE))
         metrics.set_recovered(broker.recover())
         metrics.set_pending(broker.pending_count())
 
@@ -162,7 +166,7 @@ def main(argv: list[str] | None = None) -> int:
                 WEB_HOST, settings.web_port(args.name), admins=settings.admins,
             )
         except (SettingsError, MissingKeyError, CorruptKeyError, CorruptStoreError,
-                CorruptAccountsError, OSError) as problem:
+                CorruptPendingError, CorruptAccountsError, OSError) as problem:
             print(Refusal(
                 "start the Broker", str(problem),
                 "check that the Universe is running, that the name is in settings.json, "
