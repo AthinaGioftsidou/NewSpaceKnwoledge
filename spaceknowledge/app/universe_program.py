@@ -25,6 +25,7 @@ from spaceknowledge.transport.universe_listener import UniverseListener
 from spaceknowledge.universe.deposits import Deposits
 from spaceknowledge.universe.universe import Universe
 from spaceknowledge.universe.universe_repository import CorruptStateError, JsonUniverseRepository
+from spaceknowledge.universe.world_events import EventLogger
 from spaceknowledge.world.loader import StandardWorldLoader
 from spaceknowledge.universe.missions import MissionBook
 
@@ -71,7 +72,9 @@ def start_universe(
     universe = Universe(
         world, Deposits.from_raw(raw), JsonUniverseRepository(state_dir / UNIVERSE_FILE),
         missions=MissionBook.from_raw(raw),
+        
     )
+    universe.subscribe(EventLogger())
     key = load_or_create_key(state_dir / SERVER_KEY_FILE)
     listener = UniverseListener(universe, ServerIdentity("universe", key), host, port, peers)
     try:

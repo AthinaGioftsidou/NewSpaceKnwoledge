@@ -88,10 +88,25 @@ def _login(client: GameClient, read: Read, read_secret: Read, write: Write) -> s
     return result
 
 
+def _news(client: GameClient, token: str, since: int | None, write: Write) -> int | None:
+    """Show what other players did here since `since`, and return the number
+    to ask from next time. The first time (since is None) nothing is shown, so
+    nothing from before the login appears. News is a bonus: if it cannot be
+    read, the game goes on without it."""
+    try:
+        texts, latest = client.news(token, since or 0)
+    except (ConnectionError, SessionEnded):
+        return since
+    if since is not None:
+        for text in texts:
+            write(f"  * {text}")
+    return latest
+
 def _play(client: GameClient, token: str, read: Read, write: Write) -> bool:
     """True if the player quit (or the input ended), False if the session ended
     and the player should be taken back to the menu."""
     write("Welcome. Type help to see what you can do, or quit to leave.")
+    since = _news(client, token, None, write)
     try:
         while True:
             line = _ask(read, "> ")
@@ -101,6 +116,7 @@ def _play(client: GameClient, token: str, read: Read, write: Write) -> bool:
                 continue
             try:
                 write(client.command(token, line))
+                since = _news(client, token, since, write)
             except SessionEnded as ended:
                 write(ended.refusal.describe())
                 return False

@@ -196,6 +196,9 @@ class UniverseListener:
                 log.exception("%s: request %s (%s %s by %s) failed", peer, request.op_id,
                               request.action, request.item_id, request.player_id)
                 return
-            log.info("%s: %s %s by %s [%s]: %s", peer, request.action, request.item_id,
-                     request.player_id, request.op_id, "ok" if response.ok else "refused")
+            # Every open page asks for news every two seconds: those go to the
+            # debug level, so the log still shows what players really did.
+            level = logging.DEBUG if request.action == "news" else logging.INFO
+            log.log(level, "%s: %s %s by %s [%s]: %s", peer, request.action, request.item_id,
+                    request.player_id, request.op_id, "ok" if response.ok else "refused")
             write_message(send, response_to_wire(response))

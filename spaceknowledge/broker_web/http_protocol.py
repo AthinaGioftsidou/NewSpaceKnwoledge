@@ -13,6 +13,7 @@ MAX_LINE = 200       # characters in a typed command
 MAX_NAME = 64        # characters in a username field (accounts judge the rest)
 MAX_PASSWORD_FIELD = 256
 MAX_TOKEN = 128
+MAX_EVENT_NUMBER = 10**18  # far above any event number the game will reach
 
 _INTERNAL = re.compile(r"universe", re.IGNORECASE)
 
@@ -88,6 +89,17 @@ def text_field(body: dict[str, Any], key: str, longest: int, allow_control: bool
                       f"send {key} as plain text")
     return value
 
+def count_field(body: dict[str, Any], key: str, largest: int) -> int:
+    """A required whole number from 0 to `largest`. JSON true and false are
+    not numbers here, even though Python treats them as 1 and 0."""
+    value = body.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise problem(400, "read the request", f"the field {key} must be a whole number",
+                      f"send {key} as a JSON number such as 0")
+    if not 0 <= value <= largest:
+        raise problem(400, "read the request", f"the field {key} is out of range",
+                      f"send {key} from 0 to {largest}")
+    return value
 
 def bearer_token(header: str | None) -> str:
     """The token from 'Authorization: Bearer <token>', or a 401."""

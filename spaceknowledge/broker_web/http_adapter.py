@@ -22,11 +22,13 @@ from spaceknowledge.app.front import Front
 from spaceknowledge.common.refusal import Refusal
 from spaceknowledge.broker_web.http_protocol import (
     MAX_BODY,
+    MAX_EVENT_NUMBER,
     MAX_LINE,
     MAX_NAME,
     MAX_PASSWORD_FIELD,
     HttpProblem,
     bearer_token,
+    count_field,
     only_fields,
     parse_json_body,
     problem,
@@ -113,7 +115,11 @@ class _Handler(BaseHTTPRequestHandler):
         """Logged BEFORE answering, so the record exists once the client has its
         answer. Never the body, the password or the token."""
         elapsed = (time.monotonic() - started) * 1000
-        log.info("%s %r -> %d [%s] %.1f ms", method, path[:60], status, request_id, elapsed)
+        # Each open page asks for news every two seconds: a good answer is
+        # logged only at debug level, so it does not bury everything else.
+        level = logging.DEBUG if path == "/news" and status == 200 else logging.INFO
+        log.log(level, "%s %r -> %d [%s] %.1f ms", method, path[:60], status, request_id,
+                elapsed)
 
     def _route(self, method: str, path: str) -> Reply:
         if method == "GET":
@@ -134,6 +140,7 @@ class _Handler(BaseHTTPRequestHandler):
             "/login": self._login,
             "/logout": self._logout,
             "/command": self._command,
+            "/news": self._news,
         }
         admin = self.server.admin_routes
         if admin is not None:
@@ -145,7 +152,7 @@ class _Handler(BaseHTTPRequestHandler):
     @staticmethod
     def _not_found() -> HttpProblem:
         return problem(404, "find that page", "there is nothing at that address",
-                       "use /, /health, /register, /login, /logout or /command")
+                       "use /, /health, /register, /login, /logout, /command or /news")
 
     def _read_body(self) -> bytes:
         text = self.headers.get("Content-Length", "0")
@@ -199,6 +206,18 @@ class _Handler(BaseHTTPRequestHandler):
         # request was fine, the world just said no. Only a bad REQUEST is an
         # HTTP error, so clients can tell the two apart.
         return 200, {"ok": True, "reply": scrub(result)}
+
+
+    def _news(self, body: dict[str, Any]) -> Reply:
+        """What other players did where this player is: the Observer's news,
+        for the page's pop-ups. `since` is the last event number already seen."""
+        token = bearer_token(self.headers.get("Authorization"))
+        only_fields(body, {"since"})
+        result = self._front.news(token, count_field(body, "since", MAX_EVENT_NUMBER))
+        if isinstance(result, Refusal):
+            raise HttpProblem(401, result)
+        events = [{"seq": event.seq, "text": scrub(event.describe())} for event in result.events]
+        return 200, {"ok": True, "events": events, "latest": result.latest}
 
     def _send(self, status: int, body: dict[str, Any], request_id: str) -> None:
         data = json.dumps(body).encode("utf-8")

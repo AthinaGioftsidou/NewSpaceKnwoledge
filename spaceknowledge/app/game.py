@@ -21,6 +21,7 @@ from spaceknowledge.universe.deposits import Deposits
 from spaceknowledge.universe.missions import MissionBook
 from spaceknowledge.universe.universe import Universe
 from spaceknowledge.universe.universe_repository import JsonUniverseRepository
+from spaceknowledge.universe.world_events import EventLogger
 from spaceknowledge.users.account_repository import JsonAccountRepository
 from spaceknowledge.users.accounts import AccountRegistry
 from spaceknowledge.users.credentials import DEFAULT_ITERATIONS
@@ -80,7 +81,9 @@ def build_game(
     universe = Universe(
         world, Deposits.from_raw(raw), JsonUniverseRepository(state_dir / UNIVERSE_FILE),
         missions=MissionBook.from_raw(raw),
+        
     )
+    universe.subscribe(EventLogger())
     key = load_or_create_key(state_dir / SERVER_KEY_FILE)
     accounts = AccountRegistry(JsonAccountRepository(state_dir / ACCOUNTS_FILE), iterations)
 

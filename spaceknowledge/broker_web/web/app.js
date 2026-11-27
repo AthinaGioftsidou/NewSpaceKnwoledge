@@ -13,6 +13,8 @@
 
 const MAX_LINE = 200;
 const TOKEN_KEY = "sk-token";
+const NEWS_EVERY_MS = 2000;   // how often the page asks what other players did
+const POPUP_MS = 5000;        // how long a pop-up stays
 
 const $ = (id) => document.getElementById(id);
 let token = "";
@@ -65,6 +67,14 @@ function fillList(id, entries, emptyText) {
   }
 }
 
+function popup(text) {
+  const note = document.createElement("div");
+  note.className = "toast";
+  note.textContent = text;
+  $("toasts").appendChild(note);
+  setTimeout(() => note.remove(), POPUP_MS);
+}
+
 function showGame(visible) {
   $("login-panel").hidden = visible;
   $("game").hidden = !visible;
@@ -110,7 +120,56 @@ async function guarded(action) {
   }
 }
 
+// ---------------------------------------------------------------- news from other players
+// The server is the Observer's subject; this page asks it every two seconds
+// what happened where the player is. The first answer only sets the counter,
+// so nothing from before the login pops up.
+
+let newsTimer = null;
+let newsBusy = false;  // one question at a time, even if an answer is slow
+let lastEvent = -1;    // -1: not asked yet
+
+function startNews() {
+  stopNews();
+  lastEvent = -1;
+  newsTimer = setInterval(() => { checkNews(); }, NEWS_EVERY_MS);
+  checkNews();
+}
+
+function stopNews() {
+  if (newsTimer !== null) clearInterval(newsTimer);
+  newsTimer = null;
+}
+
+async function checkNews() {
+  if (!token || newsBusy) return;
+  newsBusy = true;
+  let result;
+  try {
+    result = await api("/news", { since: Math.max(lastEvent, 0) });
+  } catch (problem) {
+    return;   // the game is not reachable now; the next try may work
+  } finally {
+    newsBusy = false;
+  }
+  if (result.status === 401) {
+    stopNews();   // the session ended; the next command shows why
+    return;
+  }
+  if (!result.data.ok || !Array.isArray(result.data.events)) return;
+  const first = lastEvent < 0;
+  lastEvent = Math.max(lastEvent, result.data.latest || 0);
+  if (first || result.data.events.length === 0) return;
+  // No refreshPanel here: it sends commands, and they would keep an idle
+  // session alive. The news itself never does.
+  for (const event of result.data.events) {
+    popup(event.text);
+    write("* " + event.text, "news");
+  }
+}
+
 function endSession(refusal) {
+  stopNews();
   saveToken("");
   showGame(false);
   document.body.className = "planet-space";
@@ -174,6 +233,7 @@ async function enterGame() {
   setStatus("");
   write("Welcome. Type help to see what you can do.", "reply");
   await guarded(refreshPanel);
+  startNews();
   $("line").focus();
 }
 
@@ -200,6 +260,7 @@ async function credentials(path) {
 }
 
 async function logout() {
+  stopNews();
   await guarded(async () => { await api("/logout", {}); });
   saveToken("");
   showGame(false);

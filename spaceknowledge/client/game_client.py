@@ -59,6 +59,29 @@ class GameClient(HttpJsonClient):
             raise self._bad("the reply has no text")
         return reply
 
+    def news(self, token: str, since: int) -> tuple[list[str], int]:
+        """What other players did where this player is, after event `since`:
+        the sentences to show, and the number to ask from next time.
+        Raises SessionEnded if the token is no longer valid."""
+        if isinstance(since, bool) or not isinstance(since, int) or since < 0:
+            raise ValueError("since must be a whole number, 0 or more")
+        status, body = self._call("POST", "/news", {"since": since}, check_token(token))
+        refusal = self._outcome(body)
+        if refusal is not None:
+            if status == 401:
+                raise SessionEnded(refusal)
+            return [], since
+        events, latest = body.get("events"), body.get("latest")
+        if not isinstance(events, list) or isinstance(latest, bool) or not isinstance(latest, int):
+            raise self._bad("the news reply is not in the expected form")
+        texts = []
+        for event in events:
+            text = event.get("text") if isinstance(event, dict) else None
+            if not isinstance(text, str) or not text:
+                raise self._bad("the news reply has an event without text")
+            texts.append(text)
+        return texts, max(latest, since)
+
     def logout(self, token: str) -> bool:
         """True if there was a live session to end."""
         _, body = self._call("POST", "/logout", {}, check_token(token))

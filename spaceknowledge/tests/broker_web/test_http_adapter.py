@@ -69,6 +69,26 @@ class TestBrokerWeb(unittest.TestCase):
                 self.assertNotIn("secret", str(body))
                 self.assertNotIn("10.0.0.7", str(body))
 
+    def test_news_tells_a_player_what_another_did(self):
+        ada, bob = self.sign_up("ada"), self.sign_up("bob")
+        latest = call(self.web, "POST", "/news", {"since": 0}, token=bob)[1]["latest"]
+        call(self.web, "POST", "/command", {"line": "drop torch"}, token=ada)
+        status, body, _ = call(self.web, "POST", "/news", {"since": latest}, token=bob)
+        self.assertEqual(200, status)
+        self.assertEqual(["ada dropped a torch"], [event["text"] for event in body["events"]])
+        self.assertGreater(body["latest"], latest)
+
+    def test_news_is_checked_like_every_other_request(self):
+        token = self.sign_up()
+        for status, request in ((401, dict(body={"since": 0})),                     # no token
+                                (400, dict(body={"since": -1})),
+                                (400, dict(body={"since": True})),                  # not a number
+                                (400, dict(body={"since": 0, "player": "bob"}))):   # extra field
+            with self.subTest(status=status, request=request):
+                use_token = None if status == 401 else token
+                self.assertEqual(status, call(self.web, "POST", "/news", token=use_token,
+                                              **request)[0])
+
 
 class TestAdminRoutes(unittest.TestCase):
 
