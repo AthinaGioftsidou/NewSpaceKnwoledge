@@ -1,4 +1,4 @@
-"""The pages the DMZ serves: a fixed whitelist of three files, loaded once."""
+"""The pages the web serves: a fixed whitelist of three files, loaded once."""
 
 from dataclasses import dataclass
 from pathlib import Path

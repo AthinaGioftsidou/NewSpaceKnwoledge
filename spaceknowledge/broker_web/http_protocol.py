@@ -1,5 +1,5 @@
-"""The DMZ's boundary: everything a client sends is checked here, and
-everything that leaves is cleaned here. Nothing behind the DMZ re-checks sizes,
+"""The web's boundary: everything a client sends is checked here, and
+everything that leaves is cleaned here. Nothing behind the web re-checks sizes,
 types or content types, because nothing reaches it that did not pass through."""
 
 import json
@@ -31,7 +31,7 @@ def problem(status: int, what: str, why: str, next_step: str) -> HttpProblem:
 
 
 def scrub(text: str) -> str:
-    """Remove the name of the internal server from anything leaving the DMZ.
+    """Remove the name of the internal server from anything leaving the web.
     Clients know the Broker side exists; they must not learn about the rest."""
     return _INTERNAL.sub("game world", text)
 

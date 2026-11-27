@@ -1,6 +1,6 @@
 """GameClient: a customer's only way into the game.
 
-It speaks HTTP to one Broker's DMZ and knows nothing else about the system: no
+It speaks HTTP to one Broker's web and knows nothing else about the system: no
 other server, no game rules, no storage.
 """
 

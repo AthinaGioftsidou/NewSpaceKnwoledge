@@ -70,7 +70,7 @@ function showGame(visible) {
   $("game").hidden = !visible;
 }
 
-// The same rule as `slug` in spaceknowledge/tests/dmz/test_web_files.py:
+// The same rule as `slug` in spaceknowledge/tests/broker_web/test_web_files.py:
 // "The Moon" becomes "moon", so the page needs a ".planet-moon" background.
 function slug(name) {
   return name.toLowerCase().trim().replace(/^the\s+/, "")
@@ -82,7 +82,7 @@ function setPlace(name) {
   document.body.className = "planet-" + (slug(name) || "space");
 }
 
-// ---------------------------------------------------------------- talking to the DMZ
+// ---------------------------------------------------------------- talking to the web
 
 async function api(path, body) {
   const headers = { "Content-Type": "application/json" };

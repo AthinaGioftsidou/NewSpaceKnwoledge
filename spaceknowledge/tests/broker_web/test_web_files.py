@@ -6,7 +6,7 @@ import re
 import unittest
 
 from spaceknowledge.app.layout import WORLD_FILE
-from spaceknowledge.dmz.web_assets import WEB_DIR
+from spaceknowledge.broker_web.web_assets import WEB_DIR
 
 
 def slug(name):

@@ -1,10 +1,10 @@
-"""Unit tests for dmz/web_assets.py: the three pages the DMZ may serve."""
+"""Unit tests for broker_web/web_assets.py: the three pages the web may serve."""
 
 import tempfile
 import unittest
 from pathlib import Path
 
-from spaceknowledge.dmz.web_assets import WEB_DIR, load_assets
+from spaceknowledge.broker_web.web_assets import WEB_DIR, load_assets
 
 
 class TestWebAssets(unittest.TestCase):

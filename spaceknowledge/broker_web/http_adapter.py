@@ -1,4 +1,4 @@
-"""ADAPTER and DMZ server. HTTP in, Front calls out; Front answers in, JSON out.
+"""ADAPTER and web server. HTTP in, Front calls out; Front answers in, JSON out.
 
 Nothing here decides what the game does. It translates, checks the request
 against the boundary in http_protocol, serves the three web pages, and hides
@@ -16,11 +16,11 @@ from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 from spaceknowledge.app.admin_service import AdminService
-from spaceknowledge.dmz.admin_routes import AdminRoutes
+from spaceknowledge.broker_web.admin_routes import AdminRoutes
 
 from spaceknowledge.app.front import Front
 from spaceknowledge.common.refusal import Refusal
-from spaceknowledge.dmz.http_protocol import (
+from spaceknowledge.broker_web.http_protocol import (
     MAX_BODY,
     MAX_LINE,
     MAX_NAME,
@@ -34,7 +34,7 @@ from spaceknowledge.dmz.http_protocol import (
     scrub,
     text_field,
 )
-from spaceknowledge.dmz.web_assets import WEB_DIR, Asset, load_assets
+from spaceknowledge.broker_web.web_assets import WEB_DIR, Asset, load_assets
 
 # Where these lines go is decided once, by the program that opens the log.
 log = logging.getLogger(__name__)
@@ -251,7 +251,7 @@ class _HttpServer(ThreadingHTTPServer):
         self.server_port = int(port)
 
 
-class DmzServer:
+class BrokerWebServer:
     """The only thing clients can reach. It knows a Front and nothing behind it.
 
     THREADS: one accept thread, plus one short-lived thread per request. `Front`
@@ -292,9 +292,9 @@ class DmzServer:
 
     def start(self) -> None:
         if self._thread is not None or self._stopped:
-            raise RuntimeError("the DMZ server can only be started once")
+            raise RuntimeError("the web server can only be started once")
         self._thread = threading.Thread(
-            target=lambda: self._server.serve_forever(poll_interval=0.05), name="dmz"
+            target=lambda: self._server.serve_forever(poll_interval=0.05), name="broker-web"
         )
         self._thread.start()
         log.info("listening on %s:%d", *self.address)
@@ -312,5 +312,5 @@ class DmzServer:
         if self._thread is not None:
             self._thread.join(timeout)
             if self._thread.is_alive():
-                raise RuntimeError(f"the DMZ thread did not stop within {timeout} seconds")
+                raise RuntimeError(f"the web thread did not stop within {timeout} seconds")
         log.info("stopped")

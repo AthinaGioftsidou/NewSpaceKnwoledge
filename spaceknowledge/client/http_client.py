@@ -36,7 +36,7 @@ def check_token(token: object) -> str:
 
 
 class HttpJsonClient:
-    """A client of one Broker's DMZ. Failures to reach the game are
+    """A client of one Broker's web. Failures to reach the game are
     ConnectionErrors, and so is any reply that cannot be used."""
 
     def __init__(self, host: str, port: int, timeout: float = 10.0) -> None:

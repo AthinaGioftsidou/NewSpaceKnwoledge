@@ -1,9 +1,9 @@
-"""Unit tests for dmz/http_protocol.py: the checks at the door."""
+"""Unit tests for broker_web/http_protocol.py: the checks at the door."""
 
 import unittest
 
 from spaceknowledge.common.refusal import Refusal
-from spaceknowledge.dmz.http_protocol import (
+from spaceknowledge.broker_web.http_protocol import (
     HttpProblem, bearer_token, only_fields, parse_json_body, refusal_body, scrub, text_field,
 )
 

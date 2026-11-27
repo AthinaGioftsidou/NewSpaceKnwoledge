@@ -1,24 +1,24 @@
-"""A running DMZ in front of a small game, and a tiny HTTP caller for the tests."""
+"""A running web in front of a small game, and a tiny HTTP caller for the tests."""
 
 import http.client
 import json
 
-from spaceknowledge.dmz.http_adapter import DmzServer
+from spaceknowledge.broker_web.http_adapter import BrokerWebServer
 from spaceknowledge.tests.app.helpers import a_game
 
 
-def a_dmz(test):
-    """Returns (dmz, front, mailbox). Port 0: the system picks a free port."""
+def a_broker_web(test):
+    """Returns (web, front, mailbox). Port 0: the system picks a free port."""
     front, admin, mailbox = a_game(test)
-    dmz = DmzServer(front, port=0, admin=admin)
-    dmz.start()
-    test.addCleanup(dmz.stop)
-    return dmz, front, mailbox
+    web = BrokerWebServer(front, port=0, admin=admin)
+    web.start()
+    test.addCleanup(web.stop)
+    return web, front, mailbox
 
 
-def call(dmz, method, path, body=None, token=None, raw=None, headers=None):
+def call(web, method, path, body=None, token=None, raw=None, headers=None):
     """Send one real HTTP request. Returns (status, parsed JSON or None, headers)."""
-    host, port = dmz.address
+    host, port = web.address
     connection = http.client.HTTPConnection(host, port, timeout=5)
     sent = dict(headers or {})
     data = raw

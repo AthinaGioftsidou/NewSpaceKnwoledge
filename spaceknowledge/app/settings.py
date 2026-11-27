@@ -1,5 +1,5 @@
 """Settings: where the Universe listens, which Brokers may connect, which ports
-their DMZs use, and who the administrators are."""
+their webs use, and who the administrators are."""
 
 import json
 import re
@@ -9,7 +9,7 @@ from pathlib import Path
 from spaceknowledge.users.credentials import check_username
 
 DEFAULT_PORT = 7400
-DEFAULT_DMZ_BASE_PORT = 8400
+DEFAULT_WEB_BASE_PORT = 8400
 
 # Names become folder names and peer names, so they are strictly limited.
 _NAME = re.compile(r"[a-z0-9][a-z0-9_-]{0,29}")
@@ -29,7 +29,7 @@ def is_valid_name(name: object) -> bool:
 class Settings:
     """Read-only. The defaults let everything start with no settings file.
 
-    Each Broker's DMZ listens on `dmz_base_port` plus the Broker's position in
+    Each Broker's web listens on `web_base_port` plus the Broker's position in
     `brokers`, so the first Broker gets the base port, the next one the port
     after it, and so on. `admins` are the names that may ask for a one-time
     admin code."""
@@ -38,7 +38,7 @@ class Settings:
     universe_port: int = DEFAULT_PORT
     brokers: tuple[str, ...] = ("broker-1", "broker-2")
     start: str = "earth"
-    dmz_base_port: int = DEFAULT_DMZ_BASE_PORT
+    web_base_port: int = DEFAULT_WEB_BASE_PORT
     admins: tuple[str, ...] = ("root",)
 
     def __post_init__(self) -> None:
@@ -56,14 +56,14 @@ class Settings:
             raise SettingsError("a Broker name is listed twice")
         if not isinstance(self.start, str) or not self.start:
             raise SettingsError("start must be non-empty text")
-        base = self.dmz_base_port
+        base = self.web_base_port
         if isinstance(base, bool) or not isinstance(base, int) or not 0 < base < 65536:
-            raise SettingsError("dmz_base_port must be a whole number from 1 to 65535")
+            raise SettingsError("web_base_port must be a whole number from 1 to 65535")
         last = base + len(self.brokers) - 1
         if last >= 65536:
-            raise SettingsError("dmz_base_port leaves no room for every Broker's port")
+            raise SettingsError("web_base_port leaves no room for every Broker's port")
         if base <= port <= last:
-            raise SettingsError("the DMZ ports must not include the Universe's port")
+            raise SettingsError("the web ports must not include the Universe's port")
         if not isinstance(self.admins, tuple) or not self.admins:
             raise SettingsError("admins must be a non-empty list of names")
         for admin in self.admins:
@@ -73,14 +73,14 @@ class Settings:
         if len(set(self.admins)) != len(self.admins):
             raise SettingsError("an administrator name is listed twice")
 
-    def dmz_port(self, name: str) -> int:
-        """The port this Broker's DMZ listens on."""
+    def web_port(self, name: str) -> int:
+        """The port this Broker's web listens on."""
         if name not in self.brokers:
             raise SettingsError(f"{name} is not one of the brokers")
-        return self.dmz_base_port + self.brokers.index(name)
+        return self.web_base_port + self.brokers.index(name)
 
 
-_FIELDS = {"universe_host", "universe_port", "brokers", "start", "dmz_base_port", "admins"}
+_FIELDS = {"universe_host", "universe_port", "brokers", "start", "web_base_port", "admins"}
 _LISTS = ("brokers", "admins")
 
 

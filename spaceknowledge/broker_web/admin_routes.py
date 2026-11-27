@@ -1,4 +1,4 @@
-"""The admin routes of the DMZ. They translate HTTP into AdminService calls and
+"""The admin routes of the web. They translate HTTP into AdminService calls and
 back, and decide nothing themselves."""
 
 from collections.abc import Callable
@@ -6,7 +6,7 @@ from typing import Any
 
 from spaceknowledge.app.admin_service import AdminService
 from spaceknowledge.common.refusal import Refusal
-from spaceknowledge.dmz.http_protocol import (
+from spaceknowledge.broker_web.http_protocol import (
     MAX_NAME,
     HttpProblem,
     bearer_token,

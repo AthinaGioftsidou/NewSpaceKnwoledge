@@ -1,11 +1,11 @@
-"""A Broker program: a Broker with its own DMZ, talking to a separate Universe.
+"""A Broker program: a Broker with its own web, talking to a separate Universe.
 Start the Universe first, then:
 
     python -m spaceknowledge.app.broker_program broker-1
 
 The name must be one of the brokers in settings.json. The Broker keeps its own
 accounts and inventories in state/<name>/, reads the shared server key from
-state/universe/, and serves clients over HTTP on its own DMZ port (8400 for
+state/universe/, and serves clients over HTTP on its own web port (8400 for
 broker-1, 8401 for broker-2 with the default settings). Players connect with
 `python -m spaceknowledge.client.program --port <that port>` or a browser, and
 administrators with `python -m spaceknowledge.client.admin_program --port <that
@@ -32,7 +32,7 @@ from spaceknowledge.broker.inventory_repository import CorruptStoreError, JsonIn
 from spaceknowledge.broker.metrics import BrokerMetrics
 from spaceknowledge.common.logfile import LOG_DIR, close_log, open_log
 from spaceknowledge.common.refusal import Refusal
-from spaceknowledge.dmz.http_adapter import DmzServer
+from spaceknowledge.broker_web.http_adapter import BrokerWebServer
 from spaceknowledge.transport.server_auth import CorruptKeyError, ServerIdentity
 from spaceknowledge.transport.socket_channel import SocketChannel
 from spaceknowledge.users.account_repository import CorruptAccountsError, JsonAccountRepository
@@ -44,7 +44,7 @@ from spaceknowledge.users.session_book import SessionBook
 
 # Clients are on this machine for now. Listening on every address would be a
 # deliberate decision, and needs TLS first.
-DMZ_HOST = "127.0.0.1"
+WEB_HOST = "127.0.0.1"
 
 
 def build_broker(
@@ -93,26 +93,26 @@ def build_broker(
 
 
 class BrokerNode:
-    """A running Broker and the DMZ clients reach it through."""
+    """A running Broker and the web clients reach it through."""
 
-    def __init__(self, game: Game, dmz: DmzServer) -> None:
+    def __init__(self, game: Game, web: BrokerWebServer) -> None:
         if not isinstance(game, Game):
             raise TypeError(f"game must be a Game, not {type(game).__name__}")
-        if not isinstance(dmz, DmzServer):
-            raise TypeError(f"dmz must be a DmzServer, not {type(dmz).__name__}")
+        if not isinstance(web, BrokerWebServer):
+            raise TypeError(f"web must be a BrokerWebServer, not {type(web).__name__}")
         self._game = game
-        self._dmz = dmz
+        self._web = web
 
     @property
     def address(self) -> tuple[str, int]:
-        """Where clients connect: the DMZ, and nothing behind it."""
-        return self._dmz.address
+        """Where clients connect: the web, and nothing behind it."""
+        return self._web.address
 
     def close(self) -> None:
-        """Stop the DMZ first, so no new request arrives, then the Broker.
+        """Stop the web first, so no new request arrives, then the Broker.
         Harmless to call twice."""
         try:
-            self._dmz.stop()
+            self._web.stop()
         finally:
             self._game.close()
 
@@ -124,30 +124,30 @@ def start_broker_node(
     port: int,
     start: str,
     name: str,
-    dmz_host: str = DMZ_HOST,
-    dmz_port: int = 0,
+    WEB_HOST: str = WEB_HOST,
+    web_port: int = 0,
     iterations: int = DEFAULT_ITERATIONS,
     timeout: float = 3.0,
     admins: tuple[str, ...] = ("root",),
 ) -> BrokerNode:
-    """A Broker plus its DMZ. If the DMZ cannot start (for example its port is
+    """A Broker plus its web. If the web cannot start (for example its port is
     taken), the Broker is stopped again and the error is raised. Port 0 lets
     the system pick a free port."""
     game = build_broker(state_dir, key_file, host, port, start, name, iterations, timeout, admins)
-    dmz: DmzServer | None = None
+    web: BrokerWebServer | None = None
     try:
-        dmz = DmzServer(game.front, dmz_host, dmz_port, admin=game.admin)
-        dmz.start()
+        web = BrokerWebServer(game.front, WEB_HOST, web_port, admin=game.admin)
+        web.start()
     except BaseException:
-        if dmz is not None:
-            dmz.stop()
+        if web is not None:
+            web.stop()
         game.close()
         raise
-    return BrokerNode(game, dmz)
+    return BrokerNode(game, web)
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Start a Broker and its DMZ.")
+    parser = argparse.ArgumentParser(description="Start a Broker and its web.")
     parser.add_argument("name", help="this Broker's name, one of the brokers in settings.json")
     args = parser.parse_args(argv)
     handler = open_log(LOG_DIR, date.today())
@@ -159,7 +159,7 @@ def main(argv: list[str] | None = None) -> int:
             node = start_broker_node(
                 broker_state_dir(args.name), UNIVERSE_STATE_DIR / SERVER_KEY_FILE,
                 settings.universe_host, settings.universe_port, settings.start, args.name,
-                DMZ_HOST, settings.dmz_port(args.name), admins=settings.admins,
+                WEB_HOST, settings.web_port(args.name), admins=settings.admins,
             )
         except (SettingsError, MissingKeyError, CorruptKeyError, CorruptStoreError,
                 CorruptAccountsError, OSError) as problem:

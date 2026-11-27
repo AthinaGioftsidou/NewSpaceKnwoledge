@@ -1,5 +1,5 @@
 """AdminClient: an administrator's only way into the game. It calls the same
-DMZ as the players, on the /admin routes, with a token of its own."""
+web as the players, on the /admin routes, with a token of its own."""
 
 from typing import Any
 

@@ -24,12 +24,12 @@ class TestSettings(unittest.TestCase):
         self.assertEqual(("broker-1", "broker-2"), settings.brokers)
         self.assertEqual(("earth", ("root",)), (settings.start, settings.admins))
 
-    def test_each_broker_gets_the_next_dmz_port(self):
+    def test_each_broker_gets_the_next_web_port(self):
         settings = Settings()
-        self.assertEqual(8400, settings.dmz_port("broker-1"))
-        self.assertEqual(8401, settings.dmz_port("broker-2"))
+        self.assertEqual(8400, settings.web_port("broker-1"))
+        self.assertEqual(8401, settings.web_port("broker-2"))
         with self.assertRaises(SettingsError):
-            settings.dmz_port("broker-9")
+            settings.web_port("broker-9")
 
     def test_a_file_changes_only_what_it_names(self):
         self.write(json.dumps({"brokers": ["alpha", "beta", "gamma"], "universe_port": 7500}))
@@ -50,7 +50,7 @@ class TestSettings(unittest.TestCase):
             {"brokers": ("broker-1", "broker-1")},           # listed twice
             {"brokers": ("Broker One",)},                    # not a valid name
             {"universe_port": 70000},                        # no such port
-            {"universe_port": 8401},                         # clashes with broker-2's DMZ
+            {"universe_port": 8401},                         # clashes with broker-2's web
             {"admins": ("Root",)},                           # must already be lower case
             {"admins": ()},                                  # nobody
         ]

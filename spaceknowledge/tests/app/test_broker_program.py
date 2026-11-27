@@ -10,7 +10,7 @@ from spaceknowledge.app.keys import MissingKeyError
 from spaceknowledge.app.layout import WORLD_FILE
 from spaceknowledge.app.universe_program import start_universe
 from spaceknowledge.tests.app.helpers import PASSWORD
-from spaceknowledge.tests.dmz.web_helpers import call
+from spaceknowledge.tests.broker_web.web_helpers import call
 
 
 class TestBrokerProgram(unittest.TestCase):
@@ -27,7 +27,7 @@ class TestBrokerProgram(unittest.TestCase):
     def a_broker(self, name):
         host, port = self.universe_address
         node = start_broker_node(self.state / name, self.state / "universe" / "server.key",
-                                 host, port, "earth", name, dmz_port=0, iterations=1)
+                                 host, port, "earth", name, web_port=0, iterations=1)
         self.addCleanup(node.close)
         return node
 
@@ -48,7 +48,7 @@ class TestBrokerProgram(unittest.TestCase):
     def test_a_broker_started_before_the_universe_is_told_why(self):
         with self.assertRaisesRegex(MissingKeyError, "start the Universe first"):
             start_broker_node(self.state / "broker-1", self.state / "nowhere" / "server.key",
-                              "127.0.0.1", 7400, "earth", "broker-1", dmz_port=0)
+                              "127.0.0.1", 7400, "earth", "broker-1", web_port=0)
 
 
 if __name__ == "__main__":

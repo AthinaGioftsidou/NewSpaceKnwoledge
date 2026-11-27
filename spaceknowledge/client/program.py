@@ -2,7 +2,7 @@
 
     python -m spaceknowledge.client.program --port 8400
 
-The port is the DMZ port of the Broker you want to play through (8400 for
+The port is the web port of the Broker you want to play through (8400 for
 broker-1, 8401 for broker-2 with the default settings). Nothing else about the
 game is known to this program.
 """
