@@ -52,6 +52,12 @@ class TestSessionBook(unittest.TestCase):
         with self.assertRaises(TypeError):
             self.book.player_for(12345)
 
+    def test_peeking_does_not_keep_a_session_alive(self):
+        self.clock.advance(500)
+        self.assertEqual("ada", self.book.peek(self.token))         # still valid...
+        self.clock.advance(100)
+        self.assertIsNone(self.book.peek(self.token))               # ...but the idle time ran on
+
 
 if __name__ == "__main__":
     unittest.main()

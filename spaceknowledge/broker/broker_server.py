@@ -11,6 +11,7 @@ from spaceknowledge.broker.broker import Broker
 from spaceknowledge.broker.metrics import BrokerMetrics
 from spaceknowledge.broker.parser import Parser
 from spaceknowledge.broker.session import Session
+from spaceknowledge.common.messages import News
 from spaceknowledge.common.refusal import Refusal
 from spaceknowledge.transport.work_queue import ServerStoppedError, Ticket, WorkQueue
 
@@ -22,11 +23,12 @@ log.addHandler(logging.NullHandler())
 @dataclass(frozen=True)
 class Line:
     """What one player sent. Read-only. A typed line has text; a join has a
-    destination instead."""
+    destination instead; a news question has the last event number seen."""
 
     player_id: str
     text: str
     join_to: str | None = None
+    news_since: int | None = None
 
 
 class BrokerServer:
@@ -118,6 +120,24 @@ class BrokerServer:
         if self._thread is None:
             raise ServerStoppedError("the Broker server has not been started")
         ticket: Ticket[Line, str] = Ticket(line)
+
+    def news(
+        self, player_id: str, since: int, timeout: float = 5.0
+    ) -> News | Refusal:
+        """What other players did where this player is, after event `since`,
+        asked on the Broker thread like every other line."""
+        if not player_id:
+            raise ValueError("player_id must not be empty")
+        if isinstance(since, bool) or not isinstance(since, int):
+            raise TypeError(f"since must be an int, not {type(since).__name__}")
+        if since < 0:
+            raise ValueError("since must not be negative")
+        return self._ask(Line(player_id, "", news_since=since), timeout)
+
+    def _ask(self, line: Line, timeout: float) -> Any:
+        if self._thread is None:
+            raise ServerStoppedError("the Broker server has not been started")
+        ticket: Ticket[Line, Any] = Ticket(line)
         self._queue.push(ticket)
         return ticket.wait(timeout)
 
@@ -141,8 +161,26 @@ class BrokerServer:
         self._metrics.record((self._clock() - started) * 1000, outcome)
         self._metrics.set_pending(self._broker.pending_count())
 
-    def _serve(self, ticket: Ticket[Line, str]) -> None:
+    def _serve_news(self, ticket: Ticket[Line, Any]) -> None:
+        """News is not counted in the metrics: a browser asks every two
+        seconds, and that would hide the players' own commands."""
         line = ticket.payload
+        try:
+            answer = self._broker.news(line.player_id, line.news_since)
+        except (ConnectionError, TimeoutError):
+            answer = Refusal("read the news", "the Universe did not answer",
+                             "wait a moment, the news will come with the next question")
+        except Exception as error:
+            log.exception("%s asked for the news and it failed", line.player_id)
+            ticket.fail(error)
+            return
+        ticket.complete(answer)
+
+    def _serve(self, ticket: Ticket[Line, Any]) -> None:
+        line = ticket.payload
+        if line.news_since is not None:
+            self._serve_news(ticket)
+            return
         what = f"join {line.join_to}" if line.join_to is not None else line.text.strip()
         started = self._clock()
         outcome = "served"

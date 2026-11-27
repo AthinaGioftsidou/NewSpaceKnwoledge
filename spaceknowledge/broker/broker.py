@@ -14,7 +14,7 @@ from spaceknowledge.broker.item_proxy import ItemProxy
 from spaceknowledge.broker.player_inventory import PlayerInventory
 from spaceknowledge.broker.resource_bag import ResourceBag
 from spaceknowledge.broker.universe_proxy import UniverseProxy
-from spaceknowledge.common.messages import ItemInfo, Request, Response
+from spaceknowledge.common.messages import ItemInfo, News, Request, Response
 from spaceknowledge.common.refusal import Refusal
 from spaceknowledge.transport.channel import UniverseChannel
 
@@ -142,6 +142,17 @@ class Broker:
         if player_id not in self._inventories:
             return self._unknown_player("look", player_id)
         return self._universe.look(player_id)
+
+    def news(self, player_id: str, since: int) -> News | Refusal:
+        """What other players did where this player is, after event number
+        `since`. Changes nothing."""
+        if isinstance(since, bool) or not isinstance(since, int):
+            raise TypeError(f"since must be an int, not {type(since).__name__}")
+        if since < 0:
+            raise ValueError("since must not be negative")
+        if player_id not in self._inventories:
+            return self._unknown_player("read the news", player_id)
+        return self._universe.news(player_id, since)
 
     def where(self, player_id: str) -> tuple[str, str] | Refusal:
         """The (id, name) of the player's destination. Changes nothing."""

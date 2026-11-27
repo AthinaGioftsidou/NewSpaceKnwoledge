@@ -4,6 +4,7 @@ must carry one."""
 import logging
 
 from spaceknowledge.broker.broker_server import BrokerServer
+from spaceknowledge.common.messages import News
 from spaceknowledge.common.refusal import Refusal
 from spaceknowledge.users.accounts import AccountRegistry
 from spaceknowledge.users.credentials import normalise_username
@@ -93,6 +94,26 @@ class Front:
                 "log in first, then send your command with the token you were given",
             )
         return self._server.submit(player, line, timeout)
+
+    def news(
+        self, token: str, since: int, timeout: float = 5.0
+    ) -> News | Refusal:
+        """What other players did where this player is, after event `since`.
+        Asking does not count as using the game, so it does not keep an idle
+        session alive. A Refusal means only "not logged in": news is a bonus,
+        so if the world cannot answer, there is simply no news this time."""
+        player = self._sessions.peek(token)
+        if player is None:
+            return Refusal(
+                "read the news",
+                "you are not logged in",
+                "log in first, then ask with the token you were given",
+            )
+        answer = self._server.news(player, since, timeout)
+        if isinstance(answer, Refusal):
+            log.debug("no news for %s: %s", player, answer.why)
+            return News((), since)
+        return answer
 
     def submit(self, token: str, line: str, timeout: float = 5.0) -> str:
         """Like `command`, but always text: a refusal is described."""

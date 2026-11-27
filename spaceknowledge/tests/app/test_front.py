@@ -43,6 +43,18 @@ class TestFront(unittest.TestCase):
         self.assertTrue(self.front.logout(token))
         self.assertTrue(self.front.submit(token, "where").startswith("Refused: send a command"))
 
+    def test_a_player_hears_what_others_do_in_the_same_place(self):
+        self.front.register("bob", PASSWORD)
+        ada, bob = self.front.login("ada", PASSWORD), self.front.login("bob", PASSWORD)
+        start = self.front.news(bob, 0).latest
+        self.front.command(ada, "drop torch")
+        news = self.front.news(bob, start)
+        self.assertEqual(["ada dropped a torch"], [event.describe() for event in news.events])
+        self.assertEqual((), self.front.news(ada, start).events)    # not your own
+
+    def test_news_needs_a_token(self):
+        self.assertEqual("you are not logged in", self.front.news("made-up-token", 0).why)
+
 
 if __name__ == "__main__":
     unittest.main()

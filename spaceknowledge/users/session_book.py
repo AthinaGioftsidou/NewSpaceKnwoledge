@@ -56,6 +56,17 @@ class SessionBook:
         return token
 
     def player_for(self, token: str) -> str | None:
+        """The player the token stands for, or None. This is a use, so it
+        restarts the idle time."""
+        return self._look_up(token, touch=True)
+
+    def peek(self, token: str) -> str | None:
+        """Like `player_for`, but NOT a use: the idle time keeps running. For
+        background questions, such as a page asking for news every two seconds,
+        which must not keep a forgotten browser logged in."""
+        return self._look_up(token, touch=False)
+
+    def _look_up(self, token: str, touch: bool) -> str | None:
         if not isinstance(token, str):
             raise TypeError(f"token must be a str, not {type(token).__name__}")
         now = self._clock()
@@ -66,7 +77,8 @@ class SessionBook:
             if self._is_expired(session, now):
                 del self._sessions[token]
                 return None
-            session.idle_until = now + self._idle_timeout
+            if touch:
+                session.idle_until = now + self._idle_timeout
             return session.player_id
 
     def close(self, token: str) -> bool:
